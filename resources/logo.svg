@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">项目管理器 Logo</title>
+  <desc id="desc">蓝紫色圆角方形中的白色项目文件夹与四格管理面板</desc>
+  <defs>
+    <linearGradient id="logo-background" x1="10" y1="8" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6674F6"/>
+      <stop offset="1" stop-color="#3437BD"/>
+    </linearGradient>
+    <linearGradient id="logo-fold" x1="18" y1="21" x2="48" y2="49" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E9EAFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="15" fill="url(#logo-background)"/>
+  <path d="M13 22.5a5 5 0 0 1 5-5h9.2c1.3 0 2.5.5 3.4 1.4l2.6 2.6H46a5 5 0 0 1 5 5v17a5 5 0 0 1-5 5H18a5 5 0 0 1-5-5v-21Z" fill="url(#logo-fold)"/>
+  <rect x="21" y="29" width="8" height="7" rx="2" fill="#5157DB"/>
+  <rect x="34" y="29" width="9" height="7" rx="2" fill="#5157DB"/>
+  <rect x="21" y="39" width="8" height="6" rx="2" fill="#5157DB"/>
+  <rect x="34" y="39" width="9" height="6" rx="2" fill="#5157DB"/>
+</svg>
