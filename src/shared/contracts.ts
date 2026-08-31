@@ -10,6 +10,12 @@ export const IPC_CHANNELS = {
   getMigrationPlan: 'migration:plan',
   executeMigrations: 'migration:execute',
   retryMigrationCleanup: 'migration:retry-cleanup',
+  openProjectInIde: 'project:open-in-ide',
+  openProjectFolder: 'project:open-folder',
+  openProjectRepository: 'project:open-repository',
+  runProjectAction: 'project:run-action',
+  updateProject: 'project:update',
+  deleteProject: 'project:delete',
   updateSettings: 'settings:update'
 } as const
 
@@ -19,12 +25,21 @@ export interface AppSettingsDto {
     type: 'vscode' | 'custom'
     customExecutablePath: string
   }
+  projectActions: ProjectActionDto[]
+}
+
+export interface ProjectActionDto {
+  id: string
+  label: string
+  type: 'vscode' | 'folder' | 'repository' | 'custom'
+  customExecutablePath: string
 }
 
 export interface ProjectDto {
   id: string
   name: string
   description: string
+  gitUrl?: string
   categoryId: string
   path: string
   source: 'existing' | 'created'
@@ -48,6 +63,7 @@ export interface CatalogSnapshotDto {
 export interface ImportExistingProjectInput {
   name: string
   description: string
+  gitUrl: string
   categoryName: string
   path: string
   expectedTargetPath: string
@@ -57,11 +73,20 @@ export interface ImportExistingProjectInput {
 export interface CreateEmptyProjectInput {
   name: string
   description: string
+  gitUrl: string
   categoryName: string
 }
 
 export interface CreateCategoryInput {
   name: string
+}
+
+export interface UpdateProjectInput {
+  projectId: string
+  name: string
+  description: string
+  gitUrl: string
+  categoryName: string
 }
 
 export type MigrationPlanStatus = 'ready' | 'already-managed' | 'conflict' | 'invalid'
@@ -131,7 +156,7 @@ export type CatalogErrorCode =
 export interface CatalogError {
   code: CatalogErrorCode
   message: string
-  field?: 'name' | 'description' | 'categoryName' | 'path'
+  field?: 'name' | 'description' | 'gitUrl' | 'categoryName' | 'path'
   existingProjectId?: string
   targetPath?: string
 }
@@ -158,6 +183,12 @@ export interface ProjectManagerApi {
   getMigrationPlan(): Promise<MigrationPlanResult>
   executeMigrations(input: ExecuteMigrationsInput): Promise<MigrationBatchResult>
   retryMigrationCleanup(operationId: string): Promise<MigrationPlanResult>
+  openProjectInIde(projectId: string): Promise<CatalogResult>
+  openProjectFolder(projectId: string): Promise<CatalogResult>
+  openProjectRepository(projectId: string): Promise<CatalogResult>
+  runProjectAction(projectId: string, actionId: string): Promise<CatalogResult>
+  updateProject(input: UpdateProjectInput): Promise<CatalogResult>
+  deleteProject(projectId: string): Promise<CatalogResult>
   importExistingProject(input: ImportExistingProjectInput): Promise<CatalogResult>
   createEmptyProject(input: CreateEmptyProjectInput): Promise<CatalogResult>
   updateSettings(input: AppSettingsDto): Promise<CatalogResult>

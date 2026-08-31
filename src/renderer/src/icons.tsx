@@ -24,7 +24,7 @@ export const LogoMark = (props: IconProps) => (
 )
 
 const Icon = ({ children, ...props }: IconProps) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
+  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
     {children}
   </svg>
 )
@@ -88,5 +88,28 @@ export const SettingsIcon = (props: IconProps) => (
 export const CodeIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4M13.5 5l-3 14" />
+  </Icon>
+)
+
+export const GitBranchIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="6" cy="5" r="2" />
+    <circle cx="18" cy="7" r="2" />
+    <circle cx="6" cy="19" r="2" />
+    <path d="M6 7v10M8 9h4a6 6 0 0 0 6-6v2" />
+  </Icon>
+)
+
+export const EditIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4.5 19.5h4l10-10a2.1 2.1 0 0 0-4-4l-10 10Z" />
+    <path d="m13.5 6.5 4 4" />
+  </Icon>
+)
+
+export const TrashIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4.5 7h15M9 7V4.5h6V7M7 7l.8 12h8.4L17 7" />
+    <path d="M10 10.5v5M14 10.5v5" />
   </Icon>
 )

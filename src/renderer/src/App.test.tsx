@@ -7,7 +7,15 @@ import { App } from './App'
 const emptyCatalog: CatalogSnapshotDto = {
   projects: [],
   categories: [],
-  settings: { defaultProjectDirectory: 'C:\\workspace', ide: { type: 'vscode', customExecutablePath: '' } }
+  settings: {
+    defaultProjectDirectory: 'C:\\workspace',
+    ide: { type: 'vscode', customExecutablePath: '' },
+    projectActions: [
+      { id: 'open-vscode', label: 'VS Code', type: 'vscode', customExecutablePath: '' },
+      { id: 'open-folder', label: '文件夹', type: 'folder', customExecutablePath: '' },
+      { id: 'open-repository', label: 'Git 仓库', type: 'repository', customExecutablePath: '' }
+    ]
+  }
 }
 
 const populatedCatalog: CatalogSnapshotDto = {
@@ -21,6 +29,7 @@ const populatedCatalog: CatalogSnapshotDto = {
       id: 'project-alpha',
       name: 'Alpha Tool',
       description: 'React desktop utility',
+      gitUrl: 'git@github.com:team/alpha-tool.git',
       categoryId: 'category-tools',
       path: 'C:\\work\\alpha',
       source: 'existing',
@@ -79,6 +88,12 @@ const api = (): ProjectManagerApi => ({
     ok: true as const,
     data: { items: [], cleanupPending: [] }
   })),
+  openProjectInIde: vi.fn(async (): Promise<CatalogResult> => ({ ok: true, data: emptyCatalog })),
+  openProjectFolder: vi.fn(async (): Promise<CatalogResult> => ({ ok: true, data: emptyCatalog })),
+  openProjectRepository: vi.fn(async (): Promise<CatalogResult> => ({ ok: true, data: emptyCatalog })),
+  runProjectAction: vi.fn(async (): Promise<CatalogResult> => ({ ok: true, data: emptyCatalog })),
+  updateProject: vi.fn(async (): Promise<CatalogResult> => ({ ok: true, data: emptyCatalog })),
+  deleteProject: vi.fn(async (): Promise<CatalogResult> => ({ ok: true, data: emptyCatalog })),
   importExistingProject: vi.fn(async (): Promise<CatalogResult> => ({
     ok: true,
     data: {
@@ -127,6 +142,7 @@ describe('App import flow', () => {
     expect(window.projectManager.importExistingProject).toHaveBeenCalledWith({
       name: 'project-manager',
       description: '本地项目管理器',
+      gitUrl: '',
       categoryName: '工具',
       path: 'C:\\work\\project-manager',
       expectedTargetPath: 'C:\\workspace\\project-manager',
@@ -177,7 +193,7 @@ describe('App import flow', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
-  it('opens settings and saves a default directory with a custom IDE', async () => {
+  it('configures multiple project action buttons and a custom program', async () => {
     render(<App />)
     await screen.findByText('从第一个本地项目开始')
 
@@ -186,15 +202,21 @@ describe('App import flow', () => {
     fireEvent.click(within(dialog).getAllByRole('button', { name: '浏览' })[0]!)
     await waitFor(() => expect(screen.getByLabelText('默认项目位置')).toHaveValue('C:\\workspace'))
 
-    fireEvent.change(screen.getByLabelText('默认 IDE'), { target: { value: 'custom' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '添加功能按钮' }))
+    const actionNames = within(dialog).getAllByLabelText('按钮名称')
+    fireEvent.change(actionNames[actionNames.length - 1]!, { target: { value: 'Rider' } })
     fireEvent.click(within(dialog).getAllByRole('button', { name: '浏览' })[1]!)
-    await waitFor(() => expect(screen.getByLabelText(/IDE 程序路径/)).toHaveValue('C:\\Tools\\IDE.exe'))
+    await waitFor(() => expect(screen.getByLabelText('Rider 程序路径')).toHaveValue('C:\\Tools\\IDE.exe'))
     fireEvent.click(within(dialog).getByRole('button', { name: '保存设置' }))
 
-    await waitFor(() => expect(window.projectManager.updateSettings).toHaveBeenCalledWith({
-      defaultProjectDirectory: 'C:\\workspace',
-      ide: { type: 'custom', customExecutablePath: 'C:\\Tools\\IDE.exe' }
-    }))
+    await waitFor(() => expect(window.projectManager.updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultProjectDirectory: 'C:\\workspace',
+        projectActions: expect.arrayContaining([
+          expect.objectContaining({ label: 'Rider', type: 'custom', customExecutablePath: 'C:\\Tools\\IDE.exe' })
+        ])
+      })
+    ))
     expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument()
   })
 
@@ -231,12 +253,90 @@ describe('App import flow', () => {
     expect(document.querySelectorAll('.project-row')).toHaveLength(2)
   })
 
+  it('hides local paths and exposes working project action buttons', async () => {
+    window.projectManager.getCatalog = vi.fn(async (): Promise<CatalogResult> => ({
+      ok: true,
+      data: populatedCatalog
+    }))
+    window.projectManager.openProjectInIde = vi.fn(async (): Promise<CatalogResult> => ({
+      ok: true,
+      data: populatedCatalog
+    }))
+    window.projectManager.openProjectFolder = vi.fn(async (): Promise<CatalogResult> => ({
+      ok: true,
+      data: populatedCatalog
+    }))
+    window.projectManager.openProjectRepository = vi.fn(async (): Promise<CatalogResult> => ({
+      ok: true,
+      data: populatedCatalog
+    }))
+    window.projectManager.runProjectAction = vi.fn(async (): Promise<CatalogResult> => ({
+      ok: true,
+      data: populatedCatalog
+    }))
+
+    render(<App />)
+    const heading = await screen.findByRole('heading', { name: 'Alpha Tool' })
+    const card = heading.closest('article')
+    expect(card).not.toBeNull()
+    expect(within(card!).queryByText('C:\\work\\alpha')).not.toBeInTheDocument()
+
+    fireEvent.click(within(card!).getByRole('button', { name: 'VS Code' }))
+    await waitFor(() => expect(window.projectManager.runProjectAction).toHaveBeenCalledWith('project-alpha', 'open-vscode'))
+    fireEvent.click(within(card!).getByRole('button', { name: '文件夹' }))
+    await waitFor(() => expect(window.projectManager.runProjectAction).toHaveBeenCalledWith('project-alpha', 'open-folder'))
+    fireEvent.click(within(card!).getByRole('button', { name: 'Git 仓库' }))
+    await waitFor(() => expect(window.projectManager.runProjectAction).toHaveBeenCalledWith('project-alpha', 'open-repository'))
+  })
+
+  it('edits project metadata and deletes only the manager record after confirmation', async () => {
+    const updatedCatalog: CatalogSnapshotDto = {
+      ...populatedCatalog,
+      projects: [
+        { ...populatedCatalog.projects[0]!, name: 'Alpha Studio', description: 'Updated tool', gitUrl: 'https://github.com/team/alpha-studio', updatedAt: '2026-08-31T10:00:00.000Z' },
+        populatedCatalog.projects[1]!
+      ]
+    }
+    const deletedCatalog: CatalogSnapshotDto = {
+      ...updatedCatalog,
+      projects: [updatedCatalog.projects[1]!]
+    }
+    window.projectManager.getCatalog = vi.fn(async (): Promise<CatalogResult> => ({ ok: true, data: populatedCatalog }))
+    window.projectManager.updateProject = vi.fn(async (): Promise<CatalogResult> => ({ ok: true, data: updatedCatalog }))
+    window.projectManager.deleteProject = vi.fn(async (): Promise<CatalogResult> => ({ ok: true, data: deletedCatalog }))
+
+    render(<App />)
+    const originalHeading = await screen.findByRole('heading', { name: 'Alpha Tool' })
+    fireEvent.click(within(originalHeading.closest('article')!).getByRole('button', { name: '修改' }))
+    const editDialog = screen.getByRole('dialog', { name: '修改项目' })
+    fireEvent.change(within(editDialog).getByLabelText(/项目名称/), { target: { value: 'Alpha Studio' } })
+    fireEvent.change(within(editDialog).getByLabelText('项目描述'), { target: { value: 'Updated tool' } })
+    fireEvent.change(within(editDialog).getByLabelText('Git 地址'), { target: { value: 'https://github.com/team/alpha-studio' } })
+    fireEvent.click(within(editDialog).getByRole('button', { name: '保存修改' }))
+
+    await waitFor(() => expect(window.projectManager.updateProject).toHaveBeenCalledWith({
+      projectId: 'project-alpha',
+      name: 'Alpha Studio',
+      description: 'Updated tool',
+      gitUrl: 'https://github.com/team/alpha-studio',
+      categoryName: '工具'
+    }))
+    const updatedHeading = await screen.findByRole('heading', { name: 'Alpha Studio' })
+    fireEvent.click(within(updatedHeading.closest('article')!).getByRole('button', { name: '删除' }))
+    const deleteDialog = screen.getByRole('alertdialog', { name: '删除“Alpha Studio”？' })
+    expect(within(deleteDialog).getByText(/不会删除本地目录/)).toBeInTheDocument()
+    fireEvent.click(within(deleteDialog).getByRole('button', { name: '确认删除' }))
+
+    await waitFor(() => expect(window.projectManager.deleteProject).toHaveBeenCalledWith('project-alpha'))
+    expect(screen.queryByRole('heading', { name: 'Alpha Studio' })).not.toBeInTheDocument()
+  })
+
   it('creates an empty project below the configured default directory without sending a path', async () => {
     const configuredCatalog: CatalogSnapshotDto = {
       ...emptyCatalog,
       settings: {
-        defaultProjectDirectory: 'C:\\workspace',
-        ide: { type: 'vscode', customExecutablePath: '' }
+        ...emptyCatalog.settings,
+        defaultProjectDirectory: 'C:\\workspace'
       }
     }
     window.projectManager.getCatalog = vi.fn(async (): Promise<CatalogResult> => ({
@@ -270,6 +370,7 @@ describe('App import flow', () => {
     fireEvent.change(screen.getByLabelText(/项目名称/), { target: { value: 'dashboard' } })
     expect(screen.getByLabelText('项目目标位置')).toHaveValue('C:\\workspace\\dashboard')
     fireEvent.change(screen.getByLabelText('项目描述'), { target: { value: '内部工具' } })
+    fireEvent.change(screen.getByLabelText('Git 地址'), { target: { value: 'git@github.com:team/dashboard.git' } })
     fireEvent.change(screen.getByLabelText(/分类/), { target: { value: '工具' } })
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '创建项目' }))
 
@@ -277,6 +378,7 @@ describe('App import flow', () => {
     expect(window.projectManager.createEmptyProject).toHaveBeenCalledWith({
       name: 'dashboard',
       description: '内部工具',
+      gitUrl: 'git@github.com:team/dashboard.git',
       categoryName: '工具'
     })
   })
@@ -304,7 +406,8 @@ describe('App import flow', () => {
 
     await waitFor(() => expect(window.projectManager.updateSettings).toHaveBeenCalledWith({
       defaultProjectDirectory: 'C:\\workspace',
-      ide: { type: 'vscode', customExecutablePath: '' }
+      ide: { type: 'vscode', customExecutablePath: '' },
+      projectActions: emptyCatalog.settings.projectActions
     }))
     expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument()
   })
@@ -313,8 +416,8 @@ describe('App import flow', () => {
     const configuredCatalog: CatalogSnapshotDto = {
       ...emptyCatalog,
       settings: {
-        defaultProjectDirectory: 'C:\\workspace',
-        ide: { type: 'vscode', customExecutablePath: '' }
+        ...emptyCatalog.settings,
+        defaultProjectDirectory: 'C:\\workspace'
       }
     }
     window.projectManager.getCatalog = vi.fn(async (): Promise<CatalogResult> => ({
@@ -348,8 +451,8 @@ describe('App import flow', () => {
     const configuredCatalog: CatalogSnapshotDto = {
       ...populatedCatalog,
       settings: {
-        defaultProjectDirectory: 'C:\\managed',
-        ide: { type: 'vscode', customExecutablePath: '' }
+        ...emptyCatalog.settings,
+        defaultProjectDirectory: 'C:\\managed'
       },
       projects: [populatedCatalog.projects[0]!]
     }

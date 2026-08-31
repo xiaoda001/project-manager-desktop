@@ -7,9 +7,10 @@ import type {
   MigrationBatchDto,
   MigrationPlanDto,
   ImportExistingProjectInput,
+  ProjectActionDto,
   ProjectDto
 } from '../../shared/contracts'
-import { ClockIcon, CloseIcon, CodeIcon, FolderIcon, GridIcon, ListIcon, LogoMark, PlusIcon, SearchIcon, SettingsIcon } from './icons'
+import { ClockIcon, CloseIcon, CodeIcon, EditIcon, FolderIcon, GitBranchIcon, GridIcon, ListIcon, LogoMark, PlusIcon, SearchIcon, SettingsIcon, TrashIcon } from './icons'
 import {
   defaultProjectQuery,
   scopeTitle,
@@ -22,7 +23,15 @@ import {
 const emptySnapshot: CatalogSnapshotDto = {
   projects: [],
   categories: [],
-  settings: { defaultProjectDirectory: '', ide: { type: 'vscode', customExecutablePath: '' } }
+  settings: {
+    defaultProjectDirectory: '',
+    ide: { type: 'vscode', customExecutablePath: '' },
+    projectActions: [
+      { id: 'open-vscode', label: 'VS Code', type: 'vscode', customExecutablePath: '' },
+      { id: 'open-folder', label: '文件夹', type: 'folder', customExecutablePath: '' },
+      { id: 'open-repository', label: 'Git 仓库', type: 'repository', customExecutablePath: '' }
+    ]
+  }
 }
 
 const directoryName = (path: string): string => {
@@ -49,6 +58,7 @@ const ImportDialog = ({ categories, settings, onClose, onOpenSettings, onCatalog
   const [form, setForm] = useState<ImportExistingProjectInput>({
     name: '',
     description: '',
+    gitUrl: '',
     categoryName: '',
     path: '',
     expectedTargetPath: '',
@@ -60,6 +70,7 @@ const ImportDialog = ({ categories, settings, onClose, onOpenSettings, onCatalog
   const [createForm, setCreateForm] = useState<CreateEmptyProjectInput>({
     name: '',
     description: '',
+    gitUrl: '',
     categoryName: ''
   })
   const [createError, setCreateError] = useState<CatalogError | null>(null)
@@ -245,6 +256,20 @@ const ImportDialog = ({ categories, settings, onClose, onOpenSettings, onCatalog
           </div>
 
           <div className="form-field">
+            <label htmlFor="project-git-url">Git 地址</label>
+            <input
+              id="project-git-url"
+              type="text"
+              inputMode="url"
+              value={form.gitUrl}
+              maxLength={2048}
+              placeholder="https://github.com/user/repository.git"
+              onChange={(event) => setForm({ ...form, gitUrl: event.target.value })}
+            />
+            <small>可选，用于记录远程仓库地址，不会自动克隆或修改仓库。</small>
+          </div>
+
+          <div className="form-field">
             <label htmlFor="project-category">分类 <span>*</span></label>
             <div className="category-picker">
               <input
@@ -323,6 +348,20 @@ const ImportDialog = ({ categories, settings, onClose, onOpenSettings, onCatalog
           </div>
 
           <div className="form-field">
+            <label htmlFor="create-project-git-url">Git 地址</label>
+            <input
+              id="create-project-git-url"
+              type="text"
+              inputMode="url"
+              value={createForm.gitUrl}
+              maxLength={2048}
+              placeholder="https://github.com/user/repository.git"
+              onChange={(event) => setCreateForm({ ...createForm, gitUrl: event.target.value })}
+            />
+            <small>可选，用于记录远程仓库地址，不会自动创建或推送远程仓库。</small>
+          </div>
+
+          <div className="form-field">
             <label htmlFor="create-project-category">分类 <span>*</span></label>
             <div className="category-picker">
               <input
@@ -387,27 +426,195 @@ const ImportDialog = ({ categories, settings, onClose, onOpenSettings, onCatalog
 const ProjectItem = ({
   project,
   categoryName,
-  view
+  view,
+  actions,
+  onCatalogUpdated,
+  onEdit,
+  onDelete
 }: {
   project: ProjectDto
   categoryName: string
   view: ViewMode
-}) => (
-  <article className={view === 'card' ? 'project-card' : 'project-row'}>
-    <div className="project-card__top">
-      <div className="project-folder"><FolderIcon /></div>
-      <div>
-        <h3>{project.name}</h3>
-        <p>{project.description || '暂无项目描述'}</p>
+  actions: ProjectActionDto[]
+  onCatalogUpdated(snapshot: CatalogSnapshotDto): void
+  onEdit(project: ProjectDto): void
+  onDelete(project: ProjectDto): void
+}) => {
+  const [runningAction, setRunningAction] = useState<string | null>(null)
+  const [actionError, setActionError] = useState('')
+
+  const runAction = async (
+    actionId: string,
+    operation: () => Promise<{ ok: true; data: CatalogSnapshotDto } | { ok: false; error: CatalogError }>
+  ) => {
+    setRunningAction(actionId)
+    setActionError('')
+    try {
+      const result = await operation()
+      if (result.ok) onCatalogUpdated(result.data)
+      else setActionError(result.error.message)
+    } finally {
+      setRunningAction(null)
+    }
+  }
+
+  return (
+    <article className={view === 'card' ? 'project-card' : 'project-row'}>
+      <div className="project-card__top">
+        <div className="project-folder"><FolderIcon /></div>
+        <div>
+          <h3>{project.name}</h3>
+          <p>{project.description || '暂无项目描述'}</p>
+        </div>
       </div>
+      <div className="project-card__meta">
+        <span>{categoryName}</span>
+        <span>更新于 {formatDate(project.updatedAt)}</span>
+      </div>
+      <div className="project-card__action-area">
+        <div className="project-card__actions" aria-label={`${project.name} 项目操作`}>
+          {actions.map((action, index) => {
+            const unavailable = action.type === 'repository' && !project.gitUrl
+            const icon = action.type === 'folder'
+              ? <FolderIcon />
+              : action.type === 'repository'
+                ? <GitBranchIcon />
+                : <CodeIcon />
+            return (
+            <button
+              key={action.id}
+              type="button"
+              className={`project-action-button${index === 0 ? ' project-action-button--primary' : ''}`}
+              disabled={runningAction !== null || unavailable}
+              title={unavailable ? '请先在“修改”中填写 Git 地址' : undefined}
+              onClick={() => void runAction(action.id, () => window.projectManager.runProjectAction(project.id, action.id))}
+            >{icon}{runningAction === action.id ? '打开中…' : action.label}</button>
+            )
+          })}
+        </div>
+        <div className="project-card__manage-actions" aria-label={`${project.name} 管理操作`}>
+          <button type="button" className="project-manage-button" onClick={() => onEdit(project)}>
+            <EditIcon />修改
+          </button>
+          <button type="button" className="project-manage-button project-manage-button--danger" onClick={() => onDelete(project)}>
+            <TrashIcon />删除
+          </button>
+        </div>
+        {actionError && <p className="project-card__action-error" role="alert">{actionError}</p>}
+      </div>
+    </article>
+  )
+}
+
+interface EditProjectDialogProps {
+  project: ProjectDto
+  categories: CatalogSnapshotDto['categories']
+  onClose(): void
+  onSuccess(snapshot: CatalogSnapshotDto): void
+}
+
+const EditProjectDialog = ({ project, categories, onClose, onSuccess }: EditProjectDialogProps) => {
+  const [form, setForm] = useState({
+    projectId: project.id,
+    name: project.name,
+    description: project.description,
+    gitUrl: project.gitUrl ?? '',
+    categoryName: categories.find((category) => category.id === project.categoryId)?.name ?? ''
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+    try {
+      const result = await window.projectManager.updateProject(form)
+      if (result.ok) onSuccess(result.data)
+      else setError(result.error.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="modal modal--project-edit" role="dialog" aria-modal="true" aria-labelledby="edit-project-title">
+        <header className="modal__header">
+          <div><span className="eyebrow">项目资料</span><h2 id="edit-project-title">修改项目</h2></div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="关闭修改项目"><CloseIcon /></button>
+        </header>
+        <form onSubmit={submit}>
+          <div className="form-field">
+            <label htmlFor="edit-project-name">项目名称 <span>*</span></label>
+            <input id="edit-project-name" value={form.name} maxLength={80} required onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <small>仅修改管理器中的名称，不会重命名本地项目目录。</small>
+          </div>
+          <div className="form-field">
+            <div className="label-row"><label htmlFor="edit-project-description">项目描述</label><span>{form.description.length} / 200</span></div>
+            <textarea id="edit-project-description" value={form.description} maxLength={200} rows={3} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+          </div>
+          <div className="form-field">
+            <label htmlFor="edit-project-git-url">Git 地址</label>
+            <input id="edit-project-git-url" value={form.gitUrl} maxLength={2048} inputMode="url" placeholder="https://github.com/user/repository.git" onChange={(event) => setForm({ ...form, gitUrl: event.target.value })} />
+          </div>
+          <div className="form-field">
+            <label htmlFor="edit-project-category">分类 <span>*</span></label>
+            <input id="edit-project-category" list="edit-project-categories" value={form.categoryName} maxLength={30} required onChange={(event) => setForm({ ...form, categoryName: event.target.value })} />
+            <datalist id="edit-project-categories">{categories.map((category) => <option key={category.id} value={category.name} />)}</datalist>
+          </div>
+          {error && <div className="form-error" role="alert">{error}</div>}
+          <footer className="modal__footer">
+            <button type="button" className="secondary-button" onClick={onClose}>取消</button>
+            <button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '保存修改'}</button>
+          </footer>
+        </form>
+      </section>
     </div>
-    <div className="project-card__meta">
-      <span>{categoryName}</span>
-      <span>更新于 {formatDate(project.updatedAt)}</span>
+  )
+}
+
+interface DeleteProjectDialogProps {
+  project: ProjectDto
+  onClose(): void
+  onSuccess(snapshot: CatalogSnapshotDto): void
+}
+
+const DeleteProjectDialog = ({ project, onClose, onSuccess }: DeleteProjectDialogProps) => {
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState('')
+
+  const remove = async () => {
+    setDeleting(true)
+    setError('')
+    try {
+      const result = await window.projectManager.deleteProject(project.id)
+      if (result.ok) onSuccess(result.data)
+      else setError(result.error.message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="modal modal--confirm" role="alertdialog" aria-modal="true" aria-labelledby="delete-project-title" aria-describedby="delete-project-description">
+        <header className="modal__header">
+          <div><span className="eyebrow eyebrow--danger">移除项目</span><h2 id="delete-project-title">删除“{project.name}”？</h2></div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="关闭删除确认"><CloseIcon /></button>
+        </header>
+        <div className="confirm-dialog__body">
+          <p id="delete-project-description">项目将从管理器中移除，但不会删除本地目录或其中的任何文件。</p>
+          {error && <div className="form-error" role="alert">{error}</div>}
+        </div>
+        <footer className="modal__footer confirm-dialog__footer">
+          <button type="button" className="secondary-button" onClick={onClose}>取消</button>
+          <button type="button" className="danger-button" disabled={deleting} onClick={() => void remove()}>{deleting ? '删除中…' : '确认删除'}</button>
+        </footer>
+      </section>
     </div>
-    <div className="project-card__path" title={project.path}>{project.path}</div>
-  </article>
-)
+  )
+}
 
 interface SettingsDialogProps {
   settings: AppSettingsDto
@@ -426,14 +633,44 @@ const SettingsDialog = ({ settings, requiredSetup = false, onClose, onSuccess }:
     if (path) setDraft((current) => ({ ...current, defaultProjectDirectory: path }))
   }
 
-  const chooseIdeExecutable = async () => {
+  const chooseActionExecutable = async (actionId: string) => {
     const path = await window.projectManager.selectIdeExecutable()
     if (path) {
       setDraft((current) => ({
         ...current,
-        ide: { ...current.ide, customExecutablePath: path }
+        projectActions: current.projectActions.map((action) => (
+          action.id === actionId ? { ...action, customExecutablePath: path } : action
+        ))
       }))
     }
+  }
+
+  const updateAction = (actionId: string, patch: Partial<ProjectActionDto>) => {
+    setDraft((current) => ({
+      ...current,
+      projectActions: current.projectActions.map((action) => (
+        action.id === actionId ? { ...action, ...patch } : action
+      ))
+    }))
+  }
+
+  const addAction = () => {
+    if (draft.projectActions.length >= 8) return
+    const id = `action-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setDraft((current) => ({
+      ...current,
+      projectActions: [
+        ...current.projectActions,
+        { id, label: '新功能', type: 'custom', customExecutablePath: '' }
+      ]
+    }))
+  }
+
+  const removeAction = (actionId: string) => {
+    setDraft((current) => ({
+      ...current,
+      projectActions: current.projectActions.filter((action) => action.id !== actionId)
+    }))
   }
 
   const save = async (event: React.FormEvent) => {
@@ -495,39 +732,71 @@ const SettingsDialog = ({ settings, requiredSetup = false, onClose, onSuccess }:
           <section className="settings-section">
             <div className="settings-section__heading">
               <CodeIcon />
-              <div><h3>项目打开方式</h3><p>内置支持 VS Code，也可以选择本机其他 IDE。</p></div>
+              <div><h3>项目功能按钮</h3><p>配置显示在项目卡片上的快捷操作，最多 8 个。</p></div>
             </div>
-            <div className="form-field">
-              <label htmlFor="ide-type">默认 IDE</label>
-              <select
-                id="ide-type"
-                value={draft.ide.type}
-                onChange={(event) => setDraft({
-                  ...draft,
-                  ide: { ...draft.ide, type: event.target.value as AppSettingsDto['ide']['type'] }
-                })}
-              >
-                <option value="vscode">Visual Studio Code</option>
-                <option value="custom">自定义 IDE</option>
-              </select>
+            <div className="action-settings-list">
+              {draft.projectActions.map((action, index) => (
+                <fieldset className="action-settings-item" key={action.id}>
+                  <legend>功能按钮 {index + 1}</legend>
+                  <div className="action-settings-grid">
+                    <div className="form-field">
+                      <label htmlFor={`action-label-${action.id}`}>按钮名称</label>
+                      <input
+                        id={`action-label-${action.id}`}
+                        value={action.label}
+                        maxLength={20}
+                        required
+                        onChange={(event) => updateAction(action.id, { label: event.target.value })}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label htmlFor={`action-type-${action.id}`}>动作类型</label>
+                      <select
+                        id={`action-type-${action.id}`}
+                        value={action.type}
+                        onChange={(event) => updateAction(action.id, {
+                          type: event.target.value as ProjectActionDto['type'],
+                          customExecutablePath: ''
+                        })}
+                      >
+                        <option value="vscode">Visual Studio Code</option>
+                        <option value="folder">打开项目文件夹</option>
+                        <option value="repository">打开 Git 仓库</option>
+                        <option value="custom">自定义程序</option>
+                      </select>
+                    </div>
+                  </div>
+                  {action.type === 'custom' && (
+                    <div className="path-picker action-settings-path">
+                      <input
+                        aria-label={`${action.label || `功能按钮 ${index + 1}`} 程序路径`}
+                        value={action.customExecutablePath}
+                        readOnly
+                        required
+                        placeholder="选择可执行程序"
+                      />
+                      <button type="button" className="secondary-button" onClick={() => void chooseActionExecutable(action.id)}>浏览</button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="action-settings-remove"
+                    onClick={() => removeAction(action.id)}
+                    aria-label={`删除功能按钮 ${action.label || index + 1}`}
+                    disabled={draft.projectActions.length === 1}
+                  >删除</button>
+                </fieldset>
+              ))}
             </div>
-
-            {draft.ide.type === 'custom' && (
-              <div className="form-field">
-                <label htmlFor="custom-ide-path">IDE 程序路径 <span>*</span></label>
-                <div className="path-picker">
-                  <input
-                    id="custom-ide-path"
-                    value={draft.ide.customExecutablePath}
-                    readOnly
-                    required
-                    placeholder="选择 IDE 可执行程序"
-                  />
-                  <button type="button" className="secondary-button" onClick={chooseIdeExecutable}>浏览</button>
-                </div>
-              </div>
-            )}
-            {draft.ide.type === 'vscode' && <div className="settings-hint">• 使用系统中的 <code>code</code> 命令打开项目</div>}
+            <div className="action-settings-footer">
+              <span>已配置 {draft.projectActions.length} / 8 个</span>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={addAction}
+                disabled={draft.projectActions.length >= 8}
+              ><PlusIcon />添加功能按钮</button>
+            </div>
           </section>
 
           {error && <div className="form-error" role="alert">{error}</div>}
@@ -638,6 +907,8 @@ export const App = () => {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [migrationOpen, setMigrationOpen] = useState(false)
+  const [editingProject, setEditingProject] = useState<ProjectDto | null>(null)
+  const [deletingProject, setDeletingProject] = useState<ProjectDto | null>(null)
   const [migrationPlan, setMigrationPlan] = useState<MigrationPlanDto>({ items: [], cleanupPending: [] })
   const [query, setQuery] = useState<ProjectQuery>(defaultProjectQuery)
 
@@ -831,6 +1102,10 @@ export const App = () => {
                   project={project}
                   categoryName={categoryNames.get(project.categoryId) ?? '未分类'}
                   view={query.view}
+                  actions={catalog.settings.projectActions}
+                  onCatalogUpdated={applyCatalog}
+                  onEdit={setEditingProject}
+                  onDelete={setDeletingProject}
                 />
               ))}
             </div>
@@ -855,6 +1130,21 @@ export const App = () => {
           requiredSetup={!catalog.settings.defaultProjectDirectory}
           onClose={() => setSettingsOpen(false)}
           onSuccess={(snapshot) => { applyCatalog(snapshot); setSettingsOpen(false) }}
+        />
+      )}
+      {editingProject && (
+        <EditProjectDialog
+          project={editingProject}
+          categories={catalog.categories}
+          onClose={() => setEditingProject(null)}
+          onSuccess={(snapshot) => { applyCatalog(snapshot); setEditingProject(null) }}
+        />
+      )}
+      {deletingProject && (
+        <DeleteProjectDialog
+          project={deletingProject}
+          onClose={() => setDeletingProject(null)}
+          onSuccess={(snapshot) => { applyCatalog(snapshot); setDeletingProject(null) }}
         />
       )}
       {migrationOpen && (

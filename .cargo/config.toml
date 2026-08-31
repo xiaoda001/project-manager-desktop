@@ -1,0 +1,6 @@
+# Use a sparse registry reachable from the project's primary development environment.
+[source.crates-io]
+replace-with = "rsproxy"
+
+[source.rsproxy]
+registry = "sparse+https://rsproxy.cn/index/"

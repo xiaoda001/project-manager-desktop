@@ -22,7 +22,7 @@ export const matchProject = (project: ProjectDto, searchText: string): boolean =
   const query = searchText.trim().toLocaleLowerCase()
   if (!query) return true
 
-  return [project.name, project.description, project.path]
+  return [project.name, project.description, project.gitUrl ?? '', project.path]
     .some((value) => value.toLocaleLowerCase().includes(query))
 }
 
